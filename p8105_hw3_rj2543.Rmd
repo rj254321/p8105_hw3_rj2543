@@ -9,6 +9,7 @@ output: github_document
 library(tidyverse)
 library(ggridges)
 library(p8105.datasets)
+library(patchwork)
 ```
 
 # Problem 1
@@ -196,14 +197,85 @@ instacart %>%
 
 This problem uses the NY NOAA data. DO NOT include this dataset in your local data directory; instead, load the data from the  p8105.datasets package (it’s called ny_noaa).
 
+```{r problem 3 data import}
+data("ny_noaa")
+
+ny_noaa = ny_noaa %>% 
+  janitor::clean_names() %>% 
+  mutate(tmax = as.numeric(tmax), tmin = as.numeric(tmin)) # convert "tmax" & "tmin" from chr to numeric
+
+ny_noaa
+skimr::skim(ny_noaa)
+```
+
+
 The goal is to do some exploration of this dataset. To that end, write a short description of the dataset, noting the size and structure of the data, describing some key variables, and indicating the extent to which missing data is an issue. Then, do or answer the following (commenting on the results of each):
+
+**The dataset is derived from the original data "ny_noaa". The dataset has `r nrow(ny_noaa)` rows and `r ncol(ny_noaa)` columns. The structure of the data is `r class(ny_noaa)`. Key variables include `r names(ny_noaa)`. Descriptions about variables can be found at**
+http://p8105.com/dataset_noaa.html: 
+
+* id: Weather station ID
+* date: Date of observation
+* prcp: Precipitation (tenths of mm)
+* snow: Snowfall (mm)
+* snwd: Snow depth (mm)
+* tmax: Maximum temperature (tenths of degrees C)
+* tmin: Minimum temperature (tenths of degrees C)
+
+**By using "skimr::skim(ny_noaa)", we can see that there are 145838 (`r 145838/2595176*100`%) missing data for prcp, 381221 (`r 381221/2595176*100`%) missing data for snow, 591786(`r 591786/2595176*100`%) missing data for snwd , 1134358 (`r 1134358/2595176*100`%) missing data for tmax and 1134420 (`r 1134420/2595176*100`%) missing data for tmin.**
 
 * Do some data cleaning. Create separate variables for year, month, and day. Ensure observations for temperature, precipitation, and snowfall are given in reasonable units. For snowfall, what are the most commonly observed values? Why?
 
+```{r problem 3 data cleaning}
+ny_noaa1 = ny_noaa %>% 
+  separate(date, into = c("year", "month", "day"), sep = "-") %>% # create separate variables for original "date"
+  mutate(year = as.integer(year), month = as.integer(month), day = as.integer(day), prcp = prcp/10, tmax = tmax/10, tmin = tmin/10) # convert "year", "month", "day" from chr to int, convert "prcp", "tmax", "tmin" from tenths to units
+
+ny_noaa1
+```
+
+```{r snowfall observation}
+ny_noaa1 %>% 
+  filter(!is.na(snow)) %>% # exclude NA
+  group_by(snow) %>% # focus on snowfall
+  summarise(n_obs = n()) %>% # count observations for each snowfall
+  arrange(desc(n_obs)) # interested in most commonly observed values
+```
+
+** Despite NA and 0 mm, 25 mm, 13 mm and 51 mm are the top 3 most commonly observed values. **
+
 * Make a two-panel plot showing the average max temperature in January and in July in each station across years. Is there any observable / interpretable structure? Any outliers?
+
+```{r average tmax in Jan & Jul}
+ny_noaa1 %>% 
+  filter(month %in% c(1,7)) %>% 
+  group_by(year, month) %>% 
+  summarise(mean_tmax = mean(tmax, na.rm = TRUE)) %>% 
+  ggplot(aes(x = year, y = mean_tmax)) +
+  geom_line() +
+  facet_grid(.~month)
+```
+
 
 * Make a two-panel plot showing 
 
 (i) tmax vs tmin for the full dataset (note that a scatterplot may not be the best option); 
 
 (ii) make a plot showing the distribution of snowfall values greater than 0 and less than 100 separately by year.
+
+```{r 2-panel plot}
+tmax_tmin = ny_noaa1 %>% 
+  filter(!is.na(tmax) & !is.na(tmin)) %>% 
+  ggplot(aes(x = tmax, y = tmin, color = year)) +
+  geom_smooth(se = FALSE)
+
+snowfall_distribution = ny_noaa1 %>% 
+  mutate(year = as.factor(year)) %>% 
+  filter(snow > 0 & snow < 100) %>% 
+  ggplot(aes(x = year, y = snow)) +
+  geom_violin(aes(fill = year)) +
+  theme(legend.position = "bottom")
+
+tmax_tmin/snowfall_distribution
+```
+
