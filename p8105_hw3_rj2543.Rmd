@@ -10,6 +10,7 @@ library(tidyverse)
 library(ggridges)
 library(p8105.datasets)
 library(patchwork)
+library(hexbin)
 ```
 
 # Problem 1
@@ -33,7 +34,7 @@ brfss = brfss_smart2010 %>%
   janitor::clean_names() %>% # clean up variable names
   filter(topic == "Overall Health") %>% # focus on "Overall Health" topic
   filter(response %in% c("Excellent", "Very good", "Good", "Fair", "Poor")) %>%  # include responses from "Excellent" to "Poor"
-  mutate(response = forcats::fct_relevel(response, c("Excellent", "Very Good", "Good", "Fair", "Poor"))) # "response" as factor taking levels ordered, can we just use "mutate(response = factor(response, levels = c("Excellent", "Very Good", "Good", "Fair", "Poor")))"?
+  mutate(response = forcats::fct_relevel(response, c("Excellent", "Very good", "Good", "Fair", "Poor"))) # "response" as factor taking levels ordered, can we just use "mutate(response = factor(response, levels = c("Excellent", "Very good", "Good", "Fair", "Poor")))"?
   
 brfss
 ```
@@ -64,11 +65,15 @@ brfss %>%
 
 ```{r spaghetti plot}
 brfss %>% 
-  group_by(year, locationabbr) %>% 
-  summarise(n = n_distinct(locationdesc))%>% 
+  group_by(year, locationabbr) %>% # focus on year and state
+  summarise(n = n_distinct(locationdesc))%>% # number of locations
   ggplot(aes(x = locationabbr, y = n, color = year)) + 
-  geom_line()
-  
+  geom_line() + # "spaghetti plot"?
+  labs(
+    title = "Numbers of locations in each state from 2002 to 2010",
+    x = "State",
+    y = "Number of locations"
+  ) 
 ```
 
 
@@ -76,22 +81,30 @@ brfss %>%
 
 ```{r table}
 brfss %>% 
-  filter(year %in% c(2002, 2006, 2010), locationabbr == "NY", response == "Excellent") %>% 
+  filter(year %in% c(2002, 2006, 2010), locationabbr == "NY", response == "Excellent") %>% #focus on certain years and response
   group_by(year) %>% 
-  summarise(mean = mean(data_value),
-            sd = sd(data_value))
+  summarise(mean = mean(data_value), # proportion of response is stored in "data_value" variable
+            sd = sd(data_value)) %>% 
+  knitr::kable(digits = 2) # make a table with reasonable proportion digits
 ```
 
 
-* For each year and state, compute the average proportion in each response category (taking the average across locations in a state). Make a five-panel plot that shows, for each response category separately, the distribution of these state-level averages over time
+* For each year and state, compute the average proportion in each response category (taking the average across locations in a state). Make a five-panel plot that shows, for each response category separately, the distribution of these state-level averages over time.
 
 ```{r five-panel plot}
-brfss %>% 
-  group_by(year, locationabbr, response) %>% 
-  summarise(mean = mean(data_value)) %>% 
-  ggplot(aes(x = locationabbr, y = mean, color = year)) + 
+brfss_1= brfss %>% 
+  group_by(year, locationabbr, response) %>% # average related to year, state and response
+  summarise(mean = mean(data_value))
+brfss_1
+
+ggplot(brfss_1, aes(x = locationabbr, y = mean, color = year)) + 
   geom_line() + 
-  facet_grid(~response)
+  facet_grid(~response) + # five-panel plot
+  labs(
+    title = "Average proportion in each response category",
+    x = "State",
+    y = "Average proportion"
+  )
 ```
 
 # Problem 2
@@ -149,24 +162,24 @@ instacart %>%
   arrange(desc(n_obs)) # arrange number of observations in a descending order
 
 ```
-** There are 134 dinstinct aisles. The top 3 popular aisles are 83-fresh vegetables (150609 items), 24-fresh fruits (150473 items) and 123-packaged vegetables fruits (78493 items). **
+**There are 134 dinstinct aisles. The top 3 popular aisles are 83-fresh vegetables (150609 items), 24-fresh fruits (150473 items) and 123-packaged vegetables fruits (78493 items).**
 
 * Make a plot that shows the number of items ordered in each aisle. Order aisles sensibly, and organize your plot so others can read it.
 
 ```{r aisle plot}
 instacart %>%
-  group_by(aisle_id, aisle) %>% 
+  group_by(aisle,aisle_id) %>% 
   summarise(n_obs = n()) %>% # count observations of each aisle
-  # mutate(aisle = forcats::fct_reorder(aisle, n_obs)) %>% 
-  ggplot() + 
-  geom_point(aes(x = aisle, y = n_obs)) + 
+  ungroup() %>% # in order to manipulate "aisle"
+  mutate(aisle = forcats::fct_reorder(aisle, desc(n_obs))) %>% # order "aisle" by n_obs (high to low)
+  ggplot(aes(x = reorder(aisle_id, desc(n_obs)), y = n_obs)) + # since aisle name is too long, so I change x-axis to be "aisle_id" instead
+  geom_point(alpha = 0.5) + 
   labs(
     title = "Popularity of Aisles",
-    x = "aisle",
-    y = "number of items ordered",
+    x = "Aisle id",
+    y = "Number of items ordered",
     caption = "Data from instacart"
-  )
-  
+  ) 
 ```
 
 * Make a table showing the most popular item in each of the aisles “baking ingredients”, “dog food care”, and “packaged vegetables fruits”.
@@ -242,20 +255,25 @@ ny_noaa1 %>%
   arrange(desc(n_obs)) # interested in most commonly observed values
 ```
 
-** Despite NA and 0 mm, 25 mm, 13 mm and 51 mm are the top 3 most commonly observed values. **
+**Despite NA, 0mm, 25 mm and 13 mm are the top 3 most commonly observed values.**
 
 * Make a two-panel plot showing the average max temperature in January and in July in each station across years. Is there any observable / interpretable structure? Any outliers?
 
 ```{r average tmax in Jan & Jul}
 ny_noaa1 %>% 
-  filter(month %in% c(1,7)) %>% 
-  group_by(year, month) %>% 
-  summarise(mean_tmax = mean(tmax, na.rm = TRUE)) %>% 
+  filter(month %in% c(1,7)) %>% # focus on January and July
+  group_by(year, month) %>% # across years
+  summarise(mean_tmax = mean(tmax, na.rm = TRUE)) %>% # need to remove so many NAs 
   ggplot(aes(x = year, y = mean_tmax)) +
   geom_line() +
-  facet_grid(.~month)
+  facet_grid(.~month) + # two-panel referred to two months?
+  labs(
+    title = "Average max temperature in January and July across years",
+    x = "Year",
+    y = "Average max temperature (degree C)"
+  )
 ```
-
+**The average max temperature is around 0 degree C in January and 27 in July. The variance of that in July seems much smaller compared to January.** 
 
 * Make a two-panel plot showing 
 
@@ -265,15 +283,25 @@ ny_noaa1 %>%
 
 ```{r 2-panel plot}
 tmax_tmin = ny_noaa1 %>% 
-  filter(!is.na(tmax) & !is.na(tmin)) %>% 
+  filter(!is.na(tmax) & !is.na(tmin)) %>% # remove NAs
   ggplot(aes(x = tmax, y = tmin, color = year)) +
-  geom_smooth(se = FALSE)
+  geom_smooth(se = FALSE) +
+  labs(
+    title = "Max temperature vs min temperature",
+    x = "Max temperature (degree C)",
+    y = "Min temperature (degree C)"
+  )
 
 snowfall_distribution = ny_noaa1 %>% 
   mutate(year = as.factor(year)) %>% 
   filter(snow > 0 & snow < 100) %>% 
   ggplot(aes(x = year, y = snow)) +
   geom_violin(aes(fill = year)) +
+  labs(
+    title = "Distribution of snowfall (between 0 and 100 mm) across years",
+    x = "Year",
+    y = "Snowfall (mm)"
+  ) + 
   theme(legend.position = "bottom")
 
 tmax_tmin/snowfall_distribution
